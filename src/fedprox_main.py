@@ -1,7 +1,5 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Python version: 3.6
-
+# python fedprox_main.py --dataset  cifar --gpu 0 --iid 0 --model resnet50 --pretrained yes
+# --local_ep --epochs
 import os
 import copy
 import time
@@ -15,7 +13,7 @@ from tensorboardX import SummaryWriter
 
 from args import args_parser
 from updates import ProxUpdate, test_results
-from models import cifarCNN, VGG
+from models import resnet50
 from utils import get_dataset, exp_details, average_weights
 import torchvision.models as models
 
@@ -38,25 +36,8 @@ if __name__ == '__main__':
     train_dataset, test_dataset, user_groups = get_dataset(args)
 
     # BUILD MODEL
-    if args.model == 'cnn':
-        if args.dataset == 'cifar':
-            global_model = cifarCNN(args=args)
-
-    elif args.model == 'vgg':
-        if args.dataset == 'cifar' and args.pretrained:
-            global_model = models.vgg16(pretrained=True)
-            # change the number of classes
-            global_model.classifier[6].out_features = 10
-            # freeze convolution weights
-            for param in global_model.features.parameters():
-                param.requires_grad = False
-        elif args.dataset == 'cifar':
-            global_model = VGG(args=args)
-        else:
-            exit(args.dataset + ' with ' + args.model + ' not supported')
-
-    elif args.model == "resnet18":
-        global_model = models.resnet18(pretrained=True)
+    if args.model == "resnet50":
+        global_model = models.resnet50(pretrained=True)
 
     else:
         exit('Error: unrecognized model')
@@ -108,7 +89,7 @@ if __name__ == '__main__':
         for idx, local_epoch in zip(idxs_users, local_epoch_list):
             local_model = ProxUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger, local_epoch=local_epoch)
-            w, loss, time = local_model.update_weights(
+            w, loss, time_taken = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch)
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
@@ -163,16 +144,25 @@ if __name__ == '__main__':
         format(args.dataset, args.model, args.epochs, args.frac, args.iid,
                args.local_ep, args.local_bs, args.lr,args.mu, args.stragglers)
 
+    # 检查目录是否存在，如果不存在创建该目录，再打开并保存对象
+    dir_name = os.path.dirname(file_name)
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
     with open(file_name, 'wb') as f:
         pickle.dump([train_loss, train_accuracy], f)
 
-    #print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
+    total_run_time = time.time() - start_time
+    print('\n Total Run Time: {0:0.4f}'.format(total_run_time))
 
     # save results to csv
     res = np.asarray([test_acc_list])
     res_name = '../save/csvResults/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_LR[{}]_u[{}]_%strag[{}].csv'. \
         format(args.dataset, args.model, args.epochs, args.frac, args.iid,
                args.local_ep, args.local_bs, args.lr, args.mu, args.stragglers)
+    # 检查目录是否存在，如果不存在创建该目录，再打开并保存对象
+    dir_name = os.path.dirname(res_name)
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
     np.savetxt(res_name, res, delimiter=",")
 
     # PLOTTING (optional)
@@ -181,24 +171,24 @@ if __name__ == '__main__':
     matplotlib.use('Agg')
 
     # # Plot Loss curve
-    # plt.figure()
-    # plt.title('Training Loss vs Communication rounds')
-    # plt.plot(range(len(train_loss)), train_loss, color='r')
-    # plt.ylabel('Training loss')
-    # plt.xlabel('Communication Rounds')
-    # plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
-    #             format(args.dataset, args.model, args.epochs, args.frac,
-    #                     args.iid, args.local_ep, args.local_bs))
+    plt.figure()
+    plt.title('Training Loss vs Communication rounds')
+    plt.plot(range(len(train_loss)), train_loss, color='r')
+    plt.ylabel('Training loss')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
+                format(args.dataset, args.model, args.epochs, args.frac,
+                        args.iid, args.local_ep, args.local_bs))
 
-    # # Plot Average Accuracy vs Communication rounds
-    # plt.figure()
-    # plt.title('Average Accuracy vs Communication rounds')
-    # plt.plot(range(len(train_accuracy)), train_accuracy , color='k')
-    # plt.ylabel('Average Accuracy')
-    # plt.xlabel('Communication Rounds')
-    # plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
-    #              format(args.dataset, args.model, args.epochs, args.frac,
-    #                     args.iid, args.local_ep, args.local_bs))
+    # Plot Average Accuracy vs Communication rounds
+    plt.figure()
+    plt.title('Average Accuracy vs Communication rounds')
+    plt.plot(range(len(train_accuracy)), train_accuracy , color='k')
+    plt.ylabel('Average Accuracy')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('../save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
+                 format(args.dataset, args.model, args.epochs, args.frac,
+                        args.iid, args.local_ep, args.local_bs))
 
     # Plot Test Accuracy vs Communication rounds
     plt.figure()
